@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  VPCID:
+    Description: "VPC ID of test-vpc"
+    Type: AWS::EC2::VPC::Id
+    Default: "vpc-test" #수정 필요
+  EC2SubnetID:
+    Description: "Subnet ID of test-subnet2"
+    Type: AWS::EC2::Subnet::Id
+    Default: "subnet-test" #수정 필요 private subnet
+  WindowsLatestAmi:
+    Type : AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-windows-latest/Windows_Server-2019-Japanese-Full-SQL_2019_Standard
+    AllowedValues:
+    - /aws/service/ami-windows-latest/Windows_Server-2019-Japanese-Full-SQL_2019_Standard
+  KeyPairName:
+    Description: "EC2 Keypair name."
+    Type: AWS::EC2::KeyPair::KeyName
+Resources:
+# Security Group
+  TestSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "test-sg"
+      GroupDescription: "[Temporary] Security group for destination server."
+      VpcId:
+        Ref: VPCID
+      SecurityGroupIngress:
+        - Description: "From test server"
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: ip
+# EC2 Instance (Windows 2016/2019)
+  TestEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId:
+        Ref: WindowsLatestAmi
+      InstanceType: "r5a.xlarge"
+      IamInstanceProfile: !ImportValue testeProfile
+      KeyName:
+        Ref: KeyPairName
+      DisableApiTermination: true
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 300
+            VolumeType: gp3
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: false
+          DeviceIndex: "0"
+          SubnetId:
+            Ref: EC2SubnetID
+          GroupSet:
+            - Ref: TestSG
+      Tags:
+        - Key: Name
+          Value: "tmp-bastion-ap1"
+# Create EBS Volume
+  SecondVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: 100
+      AvailabilityZone: !GetAtt TestEC2.AvailabilityZone
+      VolumeType: gp3
+  ThirdVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: 2000
+      AvailabilityZone: !GetAtt TestEC2.AvailabilityZone
+      VolumeType: gp3
+# Attached EBS Volume
+  SecondVolumeMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref TestEC2
+      VolumeId: !Ref SecondVolume
+      Device: xvdf
+  ThirdVolumeMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref TestEC2
+      VolumeId: !Ref ThirdVolume
+      Device: xvdg
